@@ -1,12 +1,12 @@
 #include <iostream>
 #include "http_server.h"
 
-static const size_t thread_pool_size = 5;
+static const size_t thread_pool_size = 1;
 
 int main(int argc, char** argv) {
     // Парсим аргументы...
     std::string address = "127.0.0.1";
-    std::size_t port = 12340;
+    std::size_t port = 12348;
 
     http_server server(address, port, thread_pool_size);
     server.run();

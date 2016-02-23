@@ -7,7 +7,17 @@
 #include <stdexcept>
 #include <event2/event.h>
 #include <thread>
+#include <event2/bufferevent_struct.h>
+#include <string.h>
+#include <fstream>
+#include <sys/sendfile.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+
 #include "connection.h"
+#include "response.h"
 
 connection::connection(evutil_socket_t client_sock, thread_pool& pool) :
         client_sock(client_sock),
@@ -40,8 +50,8 @@ connection::connection(evutil_socket_t client_sock, thread_pool& pool) :
         throw std::runtime_error("client buffer_event creation failed");
     }
 
-    // устанавливаем колбеки на это событие FIXME: NULLPTR
-    bufferevent_setcb(buf_ev, buff_on_read, buff_on_write, buff_on_err, nullptr);
+    // устанавливаем колбеки на это событие
+    bufferevent_setcb(buf_ev, buff_on_read, buff_on_write, buff_on_err, this);
     // Включаем их (?) - так надо, чтобы работало
     bufferevent_enable(buf_ev, EV_READ);
 }
@@ -54,15 +64,102 @@ void connection::on_start(connection* c) {
 }
 
 void connection::start() {
+    // Инициализируем парсер на парсинг реквестов
+    http_parser_init(&parser, HTTP_REQUEST);
+
     // добавляем в пул потоков задачу
     pool.runAsync(on_start, this);
-    //on_start(this);
+
     std::cout << "Connection running!\n";
 }
 
+// Эта штука срабатывает, когда кто-то нам пишет
 void connection::buff_on_read(struct bufferevent *bev, void *ctx) {
-    //bev.
+    connection* _this = static_cast<connection*>(ctx);
+
     std::cout << "Sth read\n";
+
+    // буфер с нашими данными
+    evbuffer* input = bev->input;
+
+    // копируем всё это дело в строку
+    size_t len = evbuffer_get_length(bev->input);
+    char* data = new char[len];
+    if ((evbuffer_copyout(input, data, len)) < 0) {
+        event_base_loopbreak(_this->evbase);
+    } else {
+        std::cout << "Parsing...\n";
+        // ПАРСИМ (TODO: здесь в оригинале должно быть всё красиво. Нужно смотреть тип запроса, обрабатывать все заголовки, вешать нормальные колбеки и много всего.), но сейчас нам важно поолучить только URL
+
+        _this->parser.data = _this; // устанавливаем для парсера связь с внешним миром
+
+        http_parser_settings settings;
+        memset(&settings, 0, sizeof(settings));
+
+        // устанавливаем обработчики
+        settings.on_url = [](http_parser* p, const char* at, size_t len) -> int {
+            // копируем URL
+            printf("Url: %.*s\n", (int)len, at);
+            char* t = new char[len-1];
+            memset(t, '\0', len*sizeof(char));
+            strncpy(t, at+1, len); // len-1 т.к. там пробел
+            // избавляемся от параметров
+            for (char* i = t; *i; ++i) {
+                if (*i == '?') { *i = '\0'; break; }
+            }
+            static_cast<connection*>(p->data)->client_request.uri = t;
+            delete t;
+            return 0;
+        };
+
+        settings.on_header_field = [](http_parser* p, const char* at, size_t len) -> int {return 0;};
+        settings.on_header_value = [](http_parser* p, const char* at, size_t len) -> int {return 0;};
+        settings.on_headers_complete = [](http_parser*) -> int {return 0;};
+
+        size_t nparsed = http_parser_execute(&_this->parser, &settings, data, len);
+        if (nparsed != len) {
+            std::cerr << "Can't parse\n";
+            event_base_loopbreak(_this->evbase);
+        }
+
+        // НА ЭТОМ ЭТАПЕ МЫ ВСЁ РАСПАРСИЛИ И ИМЕЕМ ЗАПОЛНЕННЫЙ РЕКВЕСТ (client_request)
+//        _this->client_request.method = http_method_str(_this->parser.method);
+        std::cout << "URI=" << _this->client_request.uri << std::endl;
+
+        // Пытаемся открыть требуемый файл и скрамливаем его клиенту
+
+        int fd = open(_this->client_request.uri.c_str(), O_RDONLY);
+        //вывод имени файла по байтам
+//        for (auto& i: _this->client_request.uri) {
+//            printf("%d ", i);
+//        }
+//        puts("");
+
+        // Если не получилось - шлём ошибку
+        if (fd < 0) {
+            perror("KEK");
+            if ((send(_this->client_sock, response::not_found.c_str(), response::not_found.length(), MSG_NOSIGNAL)) < 0) {
+                std::cout << "cant't send!!!\n";
+            }
+        } else {
+            // если всё окей
+            if ((send(_this->client_sock, response::ok.c_str(), response::ok.length(), MSG_NOSIGNAL | MSG_MORE)) < 0) {
+                std::cout << "can't send\n";
+            } else {
+                struct stat stat_buf;
+                fstat(fd, &stat_buf);
+
+                // Посылаем файл
+                ssize_t recv = sendfile( _this->client_sock, fd, nullptr, stat_buf.st_size);
+                if (recv != stat_buf.st_size) {
+                    std::cout << "file not sent at all\n";
+                }
+            }
+
+        }
+
+        event_base_loopexit(_this->evbase, nullptr);
+    }
 }
 
 void connection::buff_on_write(struct bufferevent *bev, void *ctx) {

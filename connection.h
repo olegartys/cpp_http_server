@@ -10,8 +10,10 @@
 #include <event2/listener.h>
 #include <event2/util.h>
 #include <event2/event.h>
+#include <http_parser.h>
 
 #include "thread_pool.h"
+#include "request.h"
 
 // Этот класс представляет собой соединение (грубо говоря, клиент)
 class connection final {
@@ -39,6 +41,9 @@ private:
     evbuffer* output_buffer;
     bufferevent* buf_ev;
 
+    http_parser parser;
+
+    request client_request;
 };
 
 
