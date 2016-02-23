@@ -40,7 +40,7 @@ void http_server::init_event_loop_for_accept() {
     }
 
     // создаём ивент на покдлючение к слушающему сокету
-    ev_accept = event_new(evbase_accept, master_sock, EV_READ | EV_PERSIST, on_accept, pool.get());
+    ev_accept = event_new(evbase_accept, master_sock, EV_READ | EV_PERSIST, on_accept, this);
     if (ev_accept == nullptr) {
         close(master_sock);
         throw std::runtime_error("Can't create event for accept!");
@@ -90,12 +90,16 @@ void http_server::init_socket_and_listen() {
 }
 
 void http_server::on_accept(evutil_socket_t fd, short flags, void *arg) {
+    http_server* _this = static_cast<http_server*>(arg); // мы передавали в эту статическую функцию this вызывающего класса
+
     evutil_socket_t client_sock = accept(fd, nullptr, 0);
 
     std::cout << "Accepted connection! fd = " << client_sock << std::endl;
 
-    std::unique_ptr<connection> conn(new connection(client_sock, *(static_cast<thread_pool*>(arg))));
-    conn->start();
+    //std::unique_ptr<connection> conn(new connection(client_sock, *(static_cast<thread_pool*>(arg))));
+    //auto conn = new connection(client_sock, *(static_cast<thread_pool*>(arg)));
+    _this->conn = std::unique_ptr<connection>(new connection(client_sock, *(_this->pool.get())));
+    _this->conn->start();
 }
 
 http_server::~http_server() {

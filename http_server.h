@@ -51,6 +51,8 @@ private:
     // Пул потоков
     std::unique_ptr<thread_pool> pool;
 
+    //
+    std::unique_ptr<connection> conn;
 };
 
 
