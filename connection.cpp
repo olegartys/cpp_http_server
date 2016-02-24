@@ -101,7 +101,7 @@ void connection::buff_on_read(struct bufferevent *bev, void *ctx) {
         // устанавливаем обработчики
         settings.on_url = [](http_parser* p, const char* at, size_t len) -> int {
             // копируем URL
-            printf("Url: %.*s\n", (int)len, at);
+           // printf("Url: %.*s\n", (int)len, at);
             char* t = new char[len-1];
             memset(t, '\0', len*sizeof(char));
             strncpy(t, at+1, len-1); // len-1 т.к. там пробел
@@ -139,7 +139,7 @@ void connection::buff_on_read(struct bufferevent *bev, void *ctx) {
 
         // Если не получилось - шлём ошибку
         if (fd < 0) {
-            perror("KEK");
+            log << "No such file or directory\n";//perror("KEK");
             if ((send(_this->client_sock, response::not_found.c_str(), response::not_found.length(), MSG_NOSIGNAL)) < 0) {
                 log << "cant't send!!!\n";
             }
