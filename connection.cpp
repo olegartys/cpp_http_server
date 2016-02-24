@@ -19,11 +19,13 @@
 #include "connection.h"
 #include "response.h"
 
+extern std::ofstream log;
+
 connection::connection(evutil_socket_t client_sock, thread_pool& pool) :
         client_sock(client_sock),
         pool(pool)
 {
-    std::cout << "Connection created!\n";
+    log << "Connection created!\n";
 
     // Устанавливаем нонблок
     if (evutil_make_socket_nonblocking(client_sock) < 0) {
@@ -60,7 +62,7 @@ connection::connection(evutil_socket_t client_sock, thread_pool& pool) :
 void connection::on_start(connection* c) {
     event_base_dispatch(c->evbase); // запускаем цикл обработки событий
     close(c->client_sock); // как только но кончился - закрываем сокет и т.д.
-    std::cout << "Connection stoped!\n";
+    log << "Connection stoped!\n";
 }
 
 void connection::start() {
@@ -70,14 +72,14 @@ void connection::start() {
     // добавляем в пул потоков задачу
     pool.runAsync(on_start, this);
 
-    std::cout << "Connection running!\n";
+    log << "Connection running!\n";
 }
 
 // Эта штука срабатывает, когда кто-то нам пишет
 void connection::buff_on_read(struct bufferevent *bev, void *ctx) {
     connection* _this = static_cast<connection*>(ctx);
 
-    std::cout << "Sth read\n";
+    log << "Sth read\n";
 
     // буфер с нашими данными
     evbuffer* input = bev->input;
@@ -88,7 +90,7 @@ void connection::buff_on_read(struct bufferevent *bev, void *ctx) {
     if ((evbuffer_copyout(input, data, len)) < 0) {
         event_base_loopbreak(_this->evbase);
     } else {
-        std::cout << "Parsing...\n";
+        log << "Parsing...\n";
         // ПАРСИМ (TODO: здесь в оригинале должно быть всё красиво. Нужно смотреть тип запроса, обрабатывать все заголовки, вешать нормальные колбеки и много всего.), но сейчас нам важно поолучить только URL
 
         _this->parser.data = _this; // устанавливаем для парсера связь с внешним миром
@@ -102,7 +104,7 @@ void connection::buff_on_read(struct bufferevent *bev, void *ctx) {
             printf("Url: %.*s\n", (int)len, at);
             char* t = new char[len-1];
             memset(t, '\0', len*sizeof(char));
-            strncpy(t, at+1, len); // len-1 т.к. там пробел
+            strncpy(t, at+1, len-1); // len-1 т.к. там пробел
             // избавляемся от параметров
             for (char* i = t; *i; ++i) {
                 if (*i == '?') { *i = '\0'; break; }
@@ -118,13 +120,13 @@ void connection::buff_on_read(struct bufferevent *bev, void *ctx) {
 
         size_t nparsed = http_parser_execute(&_this->parser, &settings, data, len);
         if (nparsed != len) {
-            std::cerr << "Can't parse\n";
+            log << "Can't parse\n";
             event_base_loopbreak(_this->evbase);
         }
 
         // НА ЭТОМ ЭТАПЕ МЫ ВСЁ РАСПАРСИЛИ И ИМЕЕМ ЗАПОЛНЕННЫЙ РЕКВЕСТ (client_request)
 //        _this->client_request.method = http_method_str(_this->parser.method);
-        std::cout << "URI=" << _this->client_request.uri << std::endl;
+        log << "URI=" << _this->client_request.uri << std::endl;
 
         // Пытаемся открыть требуемый файл и скрамливаем его клиенту
 
@@ -139,12 +141,12 @@ void connection::buff_on_read(struct bufferevent *bev, void *ctx) {
         if (fd < 0) {
             perror("KEK");
             if ((send(_this->client_sock, response::not_found.c_str(), response::not_found.length(), MSG_NOSIGNAL)) < 0) {
-                std::cout << "cant't send!!!\n";
+                log << "cant't send!!!\n";
             }
         } else {
             // если всё окей
             if ((send(_this->client_sock, response::ok.c_str(), response::ok.length(), MSG_NOSIGNAL | MSG_MORE)) < 0) {
-                std::cout << "can't send\n";
+                log << "can't send\n";
             } else {
                 struct stat stat_buf;
                 fstat(fd, &stat_buf);
@@ -152,7 +154,7 @@ void connection::buff_on_read(struct bufferevent *bev, void *ctx) {
                 // Посылаем файл
                 ssize_t recv = sendfile( _this->client_sock, fd, nullptr, stat_buf.st_size);
                 if (recv != stat_buf.st_size) {
-                    std::cout << "file not sent at all\n";
+                    log << "file not sent at all\n";
                 }
             }
 
@@ -163,9 +165,9 @@ void connection::buff_on_read(struct bufferevent *bev, void *ctx) {
 }
 
 void connection::buff_on_write(struct bufferevent *bev, void *ctx) {
-    std::cout << "Sth wrote\n";
+    log << "Sth wrote\n";
 }
 
 void connection::buff_on_err(struct bufferevent *bev, short what, void *ctx) {
-    std::cout << "Sth err\n";
+    log << "Sth err\n";
 }

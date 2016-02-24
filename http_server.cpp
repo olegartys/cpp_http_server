@@ -8,10 +8,11 @@
 
 #include <event2/util.h>
 #include <unistd.h>
-#include <iostream>
+#include <fstream>
 
 #include "http_server.h"
 
+extern std::ofstream log;
 
 http_server::http_server(const std::string &address, std::size_t port, std::size_t thread_pool_size):
     address(address),
@@ -28,7 +29,7 @@ http_server::http_server(const std::string &address, std::size_t port, std::size
 }
 
 void http_server::run() {
-    std::cout << "I am running!\n";
+    log << "I am running!\n";
     event_base_dispatch(evbase_accept); // запскаем цикл, принимающий соединения
 }
 
@@ -94,7 +95,7 @@ void http_server::on_accept(evutil_socket_t fd, short flags, void *arg) {
 
     evutil_socket_t client_sock = accept(fd, nullptr, 0);
 
-    std::cout << "Accepted connection! fd = " << client_sock << std::endl;
+    log << "Accepted connection! fd = " << client_sock << std::endl;
 
     //std::unique_ptr<connection> conn(new connection(client_sock, *(static_cast<thread_pool*>(arg))));
     //auto conn = new connection(client_sock, *(static_cast<thread_pool*>(arg)));
