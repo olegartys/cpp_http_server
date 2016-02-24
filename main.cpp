@@ -17,7 +17,7 @@ int main(int argc, char** argv) {
     }
 
     std::string address;
-    std::size_t port = 12341;
+    std::size_t port;
     std::string working_dir;
 
     int res = 0;
@@ -28,7 +28,7 @@ int main(int argc, char** argv) {
                 break;
 
             case 'p':
-                //port = atoll(optarg);
+                port = atoll(optarg);
                 break;
 
             case 'd':
